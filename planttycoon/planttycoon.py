@@ -1,15 +1,17 @@
 import asyncio
 import collections
+import copy
 import datetime
 import json
 import time
 from random import choice
-from typing import Any
+from typing import Literal
 
 import discord
-from redbot.core import commands, Config, bank
+from redbot.core import Config, bank, commands
 from redbot.core.bot import Red
 from redbot.core.data_manager import bundled_data_path
+from redbot.core.utils import AsyncIter
 
 
 class Gardener:
@@ -117,7 +119,8 @@ async def _withdraw_points(gardener: Gardener, amount):
 class PlantTycoon(commands.Cog):
     """Grow your own plants! Be sure to take proper care of it."""
 
-    def __init__(self, bot: Red):
+    def __init__(self, bot: Red, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.bot = bot
         self.config = Config.get_conf(self, identifier=80108971101168412199111111110)
 
@@ -178,17 +181,50 @@ class PlantTycoon(commands.Cog):
 
         # self.bank = bot.get_cog('Economy').bank
 
+    async def red_delete_data_for_user(
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
+    ):
+
+        await self.config.user_from_id(user_id).clear()
+
     async def _load_plants_products(self):
+        """Runs in __init__.py before cog is added to the bot"""
         plant_path = bundled_data_path(self) / "plants.json"
         product_path = bundled_data_path(self) / "products.json"
         with plant_path.open() as json_data:
             self.plants = json.load(json_data)
+
+        await self._load_event_seeds()
 
         with product_path.open() as json_data:
             self.products = json.load(json_data)
 
         for product in self.products:
             print("PlantTycoon: Loaded {}".format(product))
+
+    async def _load_event_seeds(self):
+        self.plants["all_plants"] = copy.deepcopy(self.plants["plants"])
+        plant_options = self.plants["all_plants"]
+
+        d = datetime.date.today()
+        month = d.month
+        if month == 1:
+            plant_options.append(self.plants["event"]["January"])
+        elif month == 2:
+            plant_options.append(self.plants["event"]["February"])
+        elif month == 3:
+            plant_options.append(self.plants["event"]["March"])
+        elif month == 4:
+            plant_options.append(self.plants["event"]["April"])
+        elif month == 10:
+            plant_options.append(self.plants["event"]["October"])
+        elif month == 11:
+            plant_options.append(self.plants["event"]["November"])
+        elif month == 12:
+            plant_options.append(self.plants["event"]["December"])
 
     async def _gardener(self, user: discord.User) -> Gardener:
 
@@ -324,7 +360,9 @@ class PlantTycoon(commands.Cog):
             ``{0}prune``: Prune your plant.\n"""
 
             em = discord.Embed(
-                title=title, description=description.format(prefix), color=discord.Color.green()
+                title=title,
+                description=description.format(prefix),
+                color=discord.Color.green(),
             )
             em.set_thumbnail(url="https://image.prntscr.com/image/AW7GuFIBSeyEgkR2W3SeiQ.png")
             em.set_footer(
@@ -349,32 +387,7 @@ class PlantTycoon(commands.Cog):
         gardener = await self._gardener(author)
 
         if not gardener.current:
-            d = datetime.date.today()
-            month = d.month
-
-            #
-            # Event Plant Check start
-            #
-            plant_options = self.plants["plants"]
-
-            if month == 1:
-                plant_options.append(self.plants["event"]["January"])
-            elif month == 2:
-                plant_options.append(self.plants["event"]["February"])
-            elif month == 3:
-                plant_options.append(self.plants["event"]["March"])
-            elif month == 4:
-                plant_options.append(self.plants["event"]["April"])
-            elif month == 10:
-                plant_options.append(self.plants["event"]["October"])
-            elif month == 11:
-                plant_options.append(self.plants["event"]["November"])
-            elif month == 12:
-                plant_options.append(self.plants["event"]["December"])
-
-            #
-            # Event Plant Check end
-            #
+            plant_options = self.plants["all_plants"]
 
             plant = choice(plant_options)
             plant["timestamp"] = int(time.time())
@@ -485,7 +498,7 @@ class PlantTycoon(commands.Cog):
         tick = ""
         tock = ""
         tick_tock = 0
-        for plant in self.plants["plants"]:
+        for plant in self.plants["all_plants"]:
             if tick_tock == 0:
                 tick += "**{}**\n".format(plant["name"])
                 tick_tock = 1
@@ -506,7 +519,7 @@ class PlantTycoon(commands.Cog):
             await self._load_plants_products()
         t = False
         plant = None
-        for p in self.plants["plants"]:
+        for p in self.plants["all_plants"]:
             if p["name"].lower() == plantname.lower().strip('"'):
                 plant = p
                 t = True
@@ -514,7 +527,8 @@ class PlantTycoon(commands.Cog):
 
         if t:
             em = discord.Embed(
-                title="Plant statistics of {}".format(plant["name"]), color=discord.Color.green()
+                title="Plant statistics of {}".format(plant["name"]),
+                color=discord.Color.green(),
             )
             em.set_thumbnail(url=plant["image"])
             em.add_field(name="**Name**", value=plant["name"])
@@ -572,7 +586,8 @@ class PlantTycoon(commands.Cog):
         author = ctx.author
         if product is None:
             em = discord.Embed(
-                title="All gardening supplies that you can buy:", color=discord.Color.green()
+                title="All gardening supplies that you can buy:",
+                color=discord.Color.green(),
             )
             for pd in self.products:
                 em.add_field(
@@ -605,8 +620,11 @@ class PlantTycoon(commands.Cog):
                         await gardener.save_gardener()
                         message = "You bought {}.".format(product.lower())
                     else:
-                        message = "You don't have enough Thneeds. You have {}, but need {}.".format(
-                            gardener.points, self.products[product.lower()]["cost"] * amount
+                        message = (
+                            "You don't have enough Thneeds. You have {}, but need {}.".format(
+                                gardener.points,
+                                self.products[product.lower()]["cost"] * amount,
+                            )
                         )
                 else:
                     message = "I don't have this product."

@@ -3,9 +3,7 @@ import random
 
 import discord
 from redbot.core import commands
-from typing import Any
-
-Cog: Any = getattr(commands, "Cog", object)
+from redbot.core.commands import Cog
 
 
 class RPSLS(Cog):
@@ -20,13 +18,18 @@ class RPSLS(Cog):
     }
 
     def __init__(self, bot):
+        super().__init__()
         self.bot = bot
+
+    async def red_delete_data_for_user(self, **kwargs):
+        """Nothing to delete"""
+        return
 
     @commands.command()
     async def rpsls(self, ctx: commands.Context, choice: str):
         """
-        Play Rock Paper Scissors Lizard Spock by Sam Kass in Discord! 
-        
+        Play Rock Paper Scissors Lizard Spock by Sam Kass in Discord!
+
         Rules:
         Scissors cuts Paper
         Paper covers Rock
